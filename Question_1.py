@@ -13,10 +13,12 @@ file_name = 'People Analytics Data Science and Reporting - Case Study FINAL.xlsx
 
 #reading the data into a dataframe
 df_activity = pd.read_excel(cur_dir + '/' + file_name, sheet_name = "Recruiting Activity Data",skiprows=[1],header=1)
-df_activity
+
 df_offer = pd.read_excel(cur_dir + '/' + file_name, sheet_name = "Offer Response Data")
-df_offer
-##Get highest Degree ever obtained 
+
+
+
+#Get highest Degree ever obtained 
 #Assumption: JD is considered Masters, so they will be labled as Masters as well. 
 degree_dict = {"PhD": 1, "Masters": 2,"JD":2, "Bachelors": 3}
 # Create a new column called "Highest Degree Level"
@@ -37,8 +39,6 @@ def get_highest_degree_level(row):
 
 df_activity["Highest Degree Level"] = df_activity.apply(get_highest_degree_level, axis=1)
 
-# Print the DataFrame
-df_activity
 
 def get_associated_school_major(row):
     degree_fields = ["Degree", "Degree.1", "Degree.2", "Degree.3"]
@@ -54,15 +54,16 @@ def get_associated_school_major(row):
 
     return None, None
 
-# df = df_activity
 df_activity[["Associated School", "Associated Major"]] = df_activity.apply(get_associated_school_major, axis=1, result_type="expand")
 
 
-df_activity
 
+# merge the two source
 df = pd.merge(df_activity, df_offer, on='Candidate ID Number', how='left')
 mask = (df['Furthest Recruiting Stage Reached'] == 'Offer Sent') & (df['Offer Decision'] == 'Offer Accepted')
 df.loc[mask, 'Furthest Recruiting Stage Reached'] = 'Offer Accepted'
+
+
 
 # Define the order of the stages
 stage_order = ['new application', 'phone screen', 'in-house interview', 'offer sent', 'offer accepted']
@@ -134,8 +135,9 @@ def format_conversion_rate(val):
 # Apply function to Conversion Rate column
 funnel_df['Conversion Rate'] = funnel_df['Conversion Rate'].apply(format_conversion_rate)
 
-# Split the data by department
+# group the data by department
 grouped = funnel_df.groupby('Department')
+
 
 for name, group in grouped:
     fig, ax = plt.subplots(figsize=(12,8))
@@ -147,86 +149,4 @@ for name, group in grouped:
     pp.savefig(fig, bbox_inches='tight')
     pp.close()
 
-
-#Q2
-
-# Step 1: Filter the dataframe
-df_stats = df.copy(deep=True)
-
-
-# Step 2: Preprocess the data
-df_stats['Furthest Recruiting Stage Reached'] = df_stats['Furthest Recruiting Stage Reached'].str.lower()
-
-# Step 3: Filter to relevant candidates
-filtered_data = df_stats[df_stats['Furthest Recruiting Stage Reached'].isin(['in-house interview', 'offer sent', 'offer accepted', 'phone screen','new application'])]
-filtered_data = filtered_data[filtered_data['Application Source'].isin(['Career Fair', 'Campus Event'])]
-
-# Step 4: Calculate the in-house interview rates for each year
-filtered_data['Year'] = pd.to_datetime(filtered_data['Date of Application']).dt.year
-filtered_data['In-House'] = filtered_data['Furthest Recruiting Stage Reached'] == 'in-house interview'
-filtered_data
-# Step 5: Perform pairwise chi-squared tests and identify statistically significant differences
-results = []
-years = filtered_data['Year'].unique()
-
-for i in range(len(years)):
-    for j in range(i + 1, len(years)):
-        year1_inhouse = filtered_data[(filtered_data['Year'] == years[i]) & filtered_data['In-House']].shape[0]
-        year1_tot = filtered_data[(filtered_data['Year'] == years[i]) ].shape[0]
-        year2_inhouse = filtered_data[(filtered_data['Year'] == years[j]) & filtered_data['In-House']].shape[0]
-        year2_tot = filtered_data[(filtered_data['Year'] == years[j]) ].shape[0]
-        
-        contingency_table = pd.DataFrame(
-            [[year1_inhouse, year1_tot],
-             [year2_inhouse, year2_tot]],
-            columns=['In-House', 'All Applicants'],
-            index=[years[i], years[j]]
-        )
-        
-        _, p_value, _, _ = chi2_contingency(contingency_table)
-        results.append((years[i], years[j], p_value))
-
-# Print results
-results.sort(key=lambda x: x[2])
-for result in results:
-    year1, year2, p_value = result
-    significance = 'Significant' if p_value < 0.05 else 'Not Significant'
-    print(f"Comparison between {year1} and {year2}: p-value = {p_value:.4f} ({significance})")
-
-#Q3 data prep
-
-
-df_vis = df.copy(deep=True)
-
-# Normalize the stages to lower case
-df_vis['Furthest Recruiting Stage Reached'] = df_vis['Furthest Recruiting Stage Reached'].str.lower()
-
-# Define the stages that involve human effort and bot stage
-human_effort_stages = ['phone screen', 'in-house interview', 'offer sent', 'offer accepted']
-bot_stage = ['new application']
-team_effort_stages = ['in-house interview', 'offer sent', 'offer accepted']
-
-# Add columns to mark if the furthest stage involves human effort, bot stage, team effort stage, and if offer is accepted
-df_vis['Human_Effort_Involved'] = df_vis['Furthest Recruiting Stage Reached'].isin(human_effort_stages)
-df_vis['Bot_Stage'] = df_vis['Furthest Recruiting Stage Reached'].isin(bot_stage)
-df_vis['Team_Effort_Involved'] = df_vis['Furthest Recruiting Stage Reached'].isin(team_effort_stages)
-df_vis['Offer_Accepted'] = (df_vis['Furthest Recruiting Stage Reached'] == 'offer accepted').astype(int)
-
-# Calculate the metrics for each Application Source
-grouped = df_vis.groupby('Application Source').agg(
-    Total_Applicants=('Candidate ID Number', 'count'),
-    Bot_Filtered=('Bot_Stage', 'sum'),
-    Total_Candidates_Human_Effort=('Human_Effort_Involved', 'sum'),
-    Team_Effort_Candidates=('Team_Effort_Involved', 'sum'),
-    Accepted_Offers=('Offer_Accepted', 'sum')
-).reset_index()
-
-# Calculate effectiveness
-grouped['Bot_Screen_rate'] = grouped['Bot_Filtered'] / grouped['Total_Applicants']
-grouped['HR_Screen_rate'] = (grouped['Total_Candidates_Human_Effort']-grouped['Team_Effort_Candidates']) / grouped['Total_Candidates_Human_Effort']
-grouped['Team_Effectiveness'] = grouped['Accepted_Offers'] / grouped['Team_Effort_Candidates']
-grouped['Overall_Effectiveness'] = grouped['Accepted_Offers'] / grouped['Total_Candidates_Human_Effort']
-
-
-grouped
-grouped.to_csv(cur_dir +'/application_source_effectiveness.csv', index=False)
+print("Job finished, check the folder for PDFs")
